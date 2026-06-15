@@ -59,6 +59,11 @@ body{
   -webkit-user-select:none;-moz-user-select:none;-ms-user-select:none;user-select:none;
   -webkit-touch-callout:none;
 }
+/* navigation-based scrolling: under lock the page scrolls inside <main>,
+   driven only by the snap controls, the left nav, and the narration. */
+body.locked{overflow:hidden;height:100vh}
+body.locked main{height:100vh;overflow-y:scroll;scrollbar-width:none;-ms-overflow-style:none;scroll-behavior:smooth}
+body.locked main::-webkit-scrollbar{display:none;width:0}
 input,textarea{-webkit-user-select:text;-moz-user-select:text;-ms-user-select:text;user-select:text}
 img{-webkit-user-drag:none;user-drag:none;pointer-events:none}
 body::before{
@@ -1050,6 +1055,7 @@ footer{padding:36px 32px 130px;font-family:var(--mono);font-size:.68rem;letter-s
     var payload = {access_key:WEB3FORMS_KEY, subject:"ISP Plan Opened - "+document.getElementById("g_name").value, name:document.getElementById("g_name").value, email:document.getElementById("g_email").value, phone:document.getElementById("g_phone").value, form:"gate"};
     try{ fetch("https://api.web3forms.com/submit",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify(payload)}).catch(function(){}); }catch(err){}
     gate.classList.add("hidden");
+    document.body.classList.add("locked");  /* engage navigation-based scrolling */
     /* auto-start the walkthrough once they enter; this click counts as the user gesture browsers require for audio */
     setTimeout(function(){ if(audio){ audio.play().catch(function(){}); } }, 350);
   });
@@ -1067,97 +1073,130 @@ footer{padding:36px 32px 130px;font-family:var(--mono);font-size:.68rem;letter-s
     if(!syncing)return;
     for(var i=CUES.length-1;i>=0;i--){
       if(audio.currentTime>=CUES[i].t){
-        if(i!==lastCue){lastCue=i;var el=document.getElementById(CUES[i].id);if(el){el.scrollIntoView({behavior:"smooth",block:"start"});}}
+        if(i!==lastCue){
+          lastCue=i;
+          var el=document.getElementById(CUES[i].id);
+          if(el){ scrollToY(el.offsetTop-6); curIndex=i; }
+        }
         break;
       }
     }
   });
   track.addEventListener("click",function(e){if(!audio.duration)return;var r=track.getBoundingClientRect();audio.currentTime=((e.clientX-r.left)/r.width)*audio.duration;});
 
+  var scroller=document.querySelector("main");
   var links=Array.prototype.slice.call(document.querySelectorAll(".rail a"));
   var secs=links.map(function(a){return document.getElementById(a.getAttribute("data-sec"))||document.querySelector(a.getAttribute("href"));});
   var sectionIds=links.map(function(a){return a.getAttribute("data-sec");});
   var curIndex=0;
 
+  function scrollTopVal(){ return document.body.classList.contains("locked") ? scroller.scrollTop : window.scrollY; }
+  function viewH(){ return document.body.classList.contains("locked") ? scroller.clientHeight : window.innerHeight; }
+
   function onScroll(){
-    var y=window.scrollY+window.innerHeight*0.34,current=0;
+    var y=scrollTopVal()+viewH()*0.34,current=0;
     for(var i=0;i<secs.length;i++){if(secs[i]&&secs[i].offsetTop<=y){current=i;}}
     curIndex=current;
     links.forEach(function(a,i){a.classList.toggle("active",i===current);a.classList.toggle("passed",i<current);});
   }
-  window.addEventListener("scroll",onScroll,{passive:true});onScroll();
+  scroller.addEventListener("scroll",onScroll,{passive:true});
+  window.addEventListener("scroll",onScroll,{passive:true});
+  onScroll();
 
-  /* ---- section-locked scrolling ----
-     A scroll/swipe gesture moves at most ONE section. While the user is
-     reading a section, the narration-driven auto-scroll pauses so it does
-     not yank them. The left nav remains a free jump (with confirm). */
+  /* programmatic scroll helpers that work whether locked (main) or not (window) */
+  function scrollToY(y){
+    if(document.body.classList.contains("locked")){ scroller.scrollTo({top:y,behavior:"smooth"}); }
+    else{ window.scrollTo({top:y,behavior:"smooth"}); }
+  }
+  function sectionTop(el){ return el.offsetTop - 6; }
+
+  /* ---- navigation-based scrolling ----
+     Native scroll is locked. A wheel/swipe/key gesture either steps DOWN a tall
+     section or moves to the next/previous section. The left nav jumps freely. */
   var snapping=false;
-  function snapTo(index){
+  function settleSync(){
+    clearTimeout(settleSync._t);
+    settleSync._t=setTimeout(function(){ syncing=true; },5000);
+  }
+  function goIndex(index){
     if(index<0) index=0;
     if(index>=secs.length) index=secs.length-1;
     curIndex=index;
     snapping=true;
-    syncing=false;                 /* pause narration auto-scroll while user navigates */
+    syncing=false;
     var el=secs[index];
-    if(el){ el.scrollIntoView({behavior:"smooth",block:"start"}); }
-    clearTimeout(snapTo._t);
-    snapTo._t=setTimeout(function(){ snapping=false; },700);
-    /* resume narration sync a few seconds after the user stops steering */
-    clearTimeout(snapTo._resume);
-    snapTo._resume=setTimeout(function(){ syncing=true; },5000);
+    if(el){ scrollToY(sectionTop(el)); }
+    clearTimeout(goIndex._t);
+    goIndex._t=setTimeout(function(){ snapping=false; },650);
+    settleSync();
+  }
+  /* step within the current section (for sections taller than the viewport) */
+  function stepWithin(dir){
+    snapping=true; syncing=false;
+    var step=Math.round(viewH()*0.82)*dir;
+    scrollToY(scrollTopVal()+step);
+    clearTimeout(stepWithin._t);
+    stepWithin._t=setTimeout(function(){ snapping=false; },500);
+    settleSync();
+  }
+  /* decide: are we at the bottom / top edge of the current tall section? */
+  function atSectionBottom(el){
+    var vTop=scrollTopVal(), vBot=vTop+viewH();
+    return vBot >= (el.offsetTop+el.offsetHeight-8);
+  }
+  function atSectionTop(el){
+    return scrollTopVal() <= el.offsetTop+8;
+  }
+  function navigate(dir){   /* dir: +1 down, -1 up */
+    var el=secs[curIndex];
+    var tall= el && el.offsetHeight > viewH()*1.02;
+    if(tall){
+      if(dir>0 && !atSectionBottom(el)){ stepWithin(1); return; }
+      if(dir<0 && !atSectionTop(el)){ stepWithin(-1); return; }
+    }
+    goIndex(curIndex+dir);
   }
 
-  /* wheel: lock to one section per gesture, but let tall sections scroll within first */
+  /* wheel */
   var wheelLock=false;
   window.addEventListener("wheel",function(e){
-    if(navConfirm && navConfirm.classList.contains("show")) return;
-    if(wheelLock||snapping){ e.preventDefault(); return; }
-    if(Math.abs(e.deltaY)<8) return;
-
-    var el=secs[curIndex];
-    if(el){
-      var rect=el.getBoundingClientRect();
-      var vh=window.innerHeight;
-      var tall=el.offsetHeight>vh*0.96;
-      if(tall){
-        /* scrolling down and section bottom not yet reached: allow native scroll */
-        if(e.deltaY>0 && rect.bottom>vh+4){ return; }
-        /* scrolling up and section top not yet reached: allow native scroll */
-        if(e.deltaY<0 && rect.top<-4){ return; }
-      }
-    }
+    if(!document.body.classList.contains("locked")) return;
+    if(navConfirm && navConfirm.classList.contains("show")){ e.preventDefault(); return; }
     e.preventDefault();
+    if(wheelLock||snapping) return;
+    if(Math.abs(e.deltaY)<8) return;
     wheelLock=true;
-    setTimeout(function(){ wheelLock=false; },650);
-    snapTo(curIndex + (e.deltaY>0?1:-1));
+    setTimeout(function(){ wheelLock=false; },560);
+    navigate(e.deltaY>0?1:-1);
   },{passive:false});
 
-  /* keyboard: arrows / page keys move one section */
+  /* keyboard */
   window.addEventListener("keydown",function(e){
+    if(!document.body.classList.contains("locked")) return;
     var inField=/^(input|textarea|select)$/i.test((e.target.tagName||""));
     if(inField) return;
     if(navConfirm && navConfirm.classList.contains("show")) return;
-    if(["ArrowDown","PageDown"," "].indexOf(e.key)!==-1){ e.preventDefault(); snapTo(curIndex+1); }
-    else if(["ArrowUp","PageUp"].indexOf(e.key)!==-1){ e.preventDefault(); snapTo(curIndex-1); }
+    if(["ArrowDown","PageDown"," "].indexOf(e.key)!==-1){ e.preventDefault(); if(!snapping) navigate(1); }
+    else if(["ArrowUp","PageUp"].indexOf(e.key)!==-1){ e.preventDefault(); if(!snapping) navigate(-1); }
+    else if(e.key==="Home"){ e.preventDefault(); goIndex(0); }
+    else if(e.key==="End"){ e.preventDefault(); goIndex(secs.length-1); }
   });
 
-  /* touch: a swipe moves one section, but allow normal scrolling inside a tall section */
-  var touchY=null;
-  window.addEventListener("touchstart",function(e){ touchY=e.touches[0].clientY; },{passive:true});
+  /* touch: block native scroll, translate a swipe into one navigate step */
+  var touchY=null,touchMoved=false;
+  window.addEventListener("touchstart",function(e){ touchY=e.touches[0].clientY; touchMoved=false; },{passive:true});
+  window.addEventListener("touchmove",function(e){
+    if(!document.body.classList.contains("locked")) return;
+    if(navConfirm && navConfirm.classList.contains("show")) return;
+    e.preventDefault();   /* stop native scrolling */
+    touchMoved=true;
+  },{passive:false});
   window.addEventListener("touchend",function(e){
     if(touchY===null) return;
+    if(!document.body.classList.contains("locked")){ touchY=null; return; }
     if(navConfirm && navConfirm.classList.contains("show")){ touchY=null; return; }
     var dy=touchY-e.changedTouches[0].clientY;
-    var el=secs[curIndex];
-    var sectionTallerThanView = el && el.offsetHeight > window.innerHeight*0.92;
-    /* only snap on a deliberate swipe; let tall sections scroll naturally within */
-    if(Math.abs(dy)>70 && !sectionTallerThanView){
-      snapTo(curIndex + (dy>0?1:-1));
-    } else {
-      /* tall section: pause narration sync briefly so it does not fight manual reading */
-      syncing=false; clearTimeout(snapTo._resume);
-      snapTo._resume=setTimeout(function(){ syncing=true; },5000);
-    }
+    if(Math.abs(dy)>50 && !snapping){ navigate(dy>0?1:-1); }
     touchY=null;
   },{passive:true});
 
@@ -1165,9 +1204,9 @@ footer{padding:36px 32px 130px;font-family:var(--mono);font-size:.68rem;letter-s
   function cueFor(id){for(var i=0;i<CUES.length;i++){if(CUES[i].id===id)return CUES[i];}return null;}
   function goToSection(id){
     var el=document.getElementById(id);
-    if(el){ el.scrollIntoView({behavior:"smooth",block:"start"}); }
     var idx=sectionIds.indexOf(id);
-    if(idx>=0) curIndex=idx;
+    if(idx>=0){ curIndex=idx; }
+    if(el){ scrollToY(sectionTop(el)); }
     var c=cueFor(id);
     if(c && audio.duration){
       audio.currentTime=c.t;
