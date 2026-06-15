@@ -425,7 +425,7 @@ footer{padding:36px 32px 130px;font-family:var(--mono);font-size:.68rem;letter-s
   <span class="tb">ISP &times; Kinetic</span>
   <select id="jumpSelect" aria-label="Jump to section">
     <option value="">Jump to section</option>
-    <option value="#top">Overview</option>
+    <option value="#overview">Overview</option>
     <option value="#selling">01 What you sell</option>
     <option value="#market">02 The market</option>
     <option value="#bigidea">03 The big idea</option>
@@ -445,7 +445,7 @@ footer{padding:36px 32px 130px;font-family:var(--mono);font-size:.68rem;letter-s
 <aside class="rail" aria-label="Sections">
   <div class="brand"><strong>Intelligent Systems Press</strong>&times; Kinetic Digital</div>
   <nav id="railNav">
-    <a href="#top" data-sec="top"><span class="node"></span>Overview</a>
+    <a href="#overview" data-sec="overview"><span class="node"></span>Overview</a>
     <a href="#selling" data-sec="selling"><span class="node"></span>01 What you sell</a>
     <a href="#market" data-sec="market"><span class="node"></span>02 The market</a>
     <a href="#bigidea" data-sec="bigidea"><span class="node"></span>03 The big idea</a>
@@ -464,7 +464,7 @@ footer{padding:36px 32px 130px;font-family:var(--mono);font-size:.68rem;letter-s
 <main id="top">
 
 <!-- ================= HERO ================= -->
-<section class="hero">
+<section class="hero" id="overview" data-sec="overview">
   <div class="inner">
     <div class="eyebrow">Confidential &middot; Prepared June 2026</div>
     <h1>The Growth Plan for Intelligent Systems Press
@@ -1028,19 +1028,19 @@ footer{padding:36px 32px 130px;font-family:var(--mono);font-size:.68rem;letter-s
 
   /* SAM: AUDIO SECTION CUES. After recording, set each start time in seconds */
   var CUES = [
-    {t:0, id:"top"},
-    {t:0, id:"selling"},
-    {t:0, id:"market"},
-    {t:0, id:"bigidea"},
-    {t:0, id:"how"},
-    {t:0, id:"organic"},
-    {t:0, id:"outbound"},
-    {t:0, id:"paid"},
-    {t:0, id:"usp"},
-    {t:0, id:"roadmap"},
-    {t:0, id:"investment"},
-    {t:0, id:"safety"},
-    {t:0, id:"next"}
+    {t:0,   id:"overview"},   /* 00:00 Overview */
+    {t:254, id:"selling"},    /* 04:14 */
+    {t:317, id:"market"},     /* 05:17 */
+    {t:406, id:"bigidea"},    /* 06:46 */
+    {t:446, id:"how"},        /* 07:26 */
+    {t:471, id:"organic"},    /* 07:51 */
+    {t:512, id:"outbound"},   /* 08:32 */
+    {t:585, id:"paid"},       /* 09:45 */
+    {t:664, id:"usp"},        /* 11:04 */
+    {t:741, id:"roadmap"},    /* 12:21 */
+    {t:780, id:"investment"}, /* 13:00 */
+    {t:817, id:"safety"},     /* 13:37 */
+    {t:874, id:"next"}        /* 14:34 */
   ];
   var WEB3FORMS_KEY = "dc729f53-a2c4-41bf-90e5-72a221042055";
 
@@ -1050,6 +1050,8 @@ footer{padding:36px 32px 130px;font-family:var(--mono);font-size:.68rem;letter-s
     var payload = {access_key:WEB3FORMS_KEY, subject:"ISP Plan Opened - "+document.getElementById("g_name").value, name:document.getElementById("g_name").value, email:document.getElementById("g_email").value, phone:document.getElementById("g_phone").value, form:"gate"};
     try{ fetch("https://api.web3forms.com/submit",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify(payload)}).catch(function(){}); }catch(err){}
     gate.classList.add("hidden");
+    /* auto-start the walkthrough once they enter; this click counts as the user gesture browsers require for audio */
+    setTimeout(function(){ if(audio){ audio.play().catch(function(){}); } }, 350);
   });
 
   var audio=document.getElementById("walkAudio"),playBtn=document.getElementById("playBtn"),fill=document.getElementById("fill"),track=document.getElementById("track"),tCur=document.getElementById("tCur"),tDur=document.getElementById("tDur");
@@ -1064,37 +1066,115 @@ footer{padding:36px 32px 130px;font-family:var(--mono);font-size:.68rem;letter-s
     tCur.textContent=fmt(audio.currentTime);
     if(!syncing)return;
     for(var i=CUES.length-1;i>=0;i--){
-      if(audio.currentTime>=CUES[i].t&&CUES[i].t>0){
+      if(audio.currentTime>=CUES[i].t){
         if(i!==lastCue){lastCue=i;var el=document.getElementById(CUES[i].id);if(el){el.scrollIntoView({behavior:"smooth",block:"start"});}}
         break;
       }
     }
   });
   track.addEventListener("click",function(e){if(!audio.duration)return;var r=track.getBoundingClientRect();audio.currentTime=((e.clientX-r.left)/r.width)*audio.duration;});
-  var wt;
-  window.addEventListener("wheel",function(){syncing=false;clearTimeout(wt);wt=setTimeout(function(){syncing=true;},6000);},{passive:true});
-  window.addEventListener("touchmove",function(){syncing=false;clearTimeout(wt);wt=setTimeout(function(){syncing=true;},6000);},{passive:true});
 
   var links=Array.prototype.slice.call(document.querySelectorAll(".rail a"));
   var secs=links.map(function(a){return document.getElementById(a.getAttribute("data-sec"))||document.querySelector(a.getAttribute("href"));});
+  var sectionIds=links.map(function(a){return a.getAttribute("data-sec");});
+  var curIndex=0;
+
   function onScroll(){
     var y=window.scrollY+window.innerHeight*0.34,current=0;
     for(var i=0;i<secs.length;i++){if(secs[i]&&secs[i].offsetTop<=y){current=i;}}
+    curIndex=current;
     links.forEach(function(a,i){a.classList.toggle("active",i===current);a.classList.toggle("passed",i<current);});
   }
   window.addEventListener("scroll",onScroll,{passive:true});onScroll();
+
+  /* ---- section-locked scrolling ----
+     A scroll/swipe gesture moves at most ONE section. While the user is
+     reading a section, the narration-driven auto-scroll pauses so it does
+     not yank them. The left nav remains a free jump (with confirm). */
+  var snapping=false;
+  function snapTo(index){
+    if(index<0) index=0;
+    if(index>=secs.length) index=secs.length-1;
+    curIndex=index;
+    snapping=true;
+    syncing=false;                 /* pause narration auto-scroll while user navigates */
+    var el=secs[index];
+    if(el){ el.scrollIntoView({behavior:"smooth",block:"start"}); }
+    clearTimeout(snapTo._t);
+    snapTo._t=setTimeout(function(){ snapping=false; },700);
+    /* resume narration sync a few seconds after the user stops steering */
+    clearTimeout(snapTo._resume);
+    snapTo._resume=setTimeout(function(){ syncing=true; },5000);
+  }
+
+  /* wheel: lock to one section per gesture, but let tall sections scroll within first */
+  var wheelLock=false;
+  window.addEventListener("wheel",function(e){
+    if(navConfirm && navConfirm.classList.contains("show")) return;
+    if(wheelLock||snapping){ e.preventDefault(); return; }
+    if(Math.abs(e.deltaY)<8) return;
+
+    var el=secs[curIndex];
+    if(el){
+      var rect=el.getBoundingClientRect();
+      var vh=window.innerHeight;
+      var tall=el.offsetHeight>vh*0.96;
+      if(tall){
+        /* scrolling down and section bottom not yet reached: allow native scroll */
+        if(e.deltaY>0 && rect.bottom>vh+4){ return; }
+        /* scrolling up and section top not yet reached: allow native scroll */
+        if(e.deltaY<0 && rect.top<-4){ return; }
+      }
+    }
+    e.preventDefault();
+    wheelLock=true;
+    setTimeout(function(){ wheelLock=false; },650);
+    snapTo(curIndex + (e.deltaY>0?1:-1));
+  },{passive:false});
+
+  /* keyboard: arrows / page keys move one section */
+  window.addEventListener("keydown",function(e){
+    var inField=/^(input|textarea|select)$/i.test((e.target.tagName||""));
+    if(inField) return;
+    if(navConfirm && navConfirm.classList.contains("show")) return;
+    if(["ArrowDown","PageDown"," "].indexOf(e.key)!==-1){ e.preventDefault(); snapTo(curIndex+1); }
+    else if(["ArrowUp","PageUp"].indexOf(e.key)!==-1){ e.preventDefault(); snapTo(curIndex-1); }
+  });
+
+  /* touch: a swipe moves one section, but allow normal scrolling inside a tall section */
+  var touchY=null;
+  window.addEventListener("touchstart",function(e){ touchY=e.touches[0].clientY; },{passive:true});
+  window.addEventListener("touchend",function(e){
+    if(touchY===null) return;
+    if(navConfirm && navConfirm.classList.contains("show")){ touchY=null; return; }
+    var dy=touchY-e.changedTouches[0].clientY;
+    var el=secs[curIndex];
+    var sectionTallerThanView = el && el.offsetHeight > window.innerHeight*0.92;
+    /* only snap on a deliberate swipe; let tall sections scroll naturally within */
+    if(Math.abs(dy)>70 && !sectionTallerThanView){
+      snapTo(curIndex + (dy>0?1:-1));
+    } else {
+      /* tall section: pause narration sync briefly so it does not fight manual reading */
+      syncing=false; clearTimeout(snapTo._resume);
+      snapTo._resume=setTimeout(function(){ syncing=true; },5000);
+    }
+    touchY=null;
+  },{passive:true});
 
   /* ---- jump to a section + move narration to its cue ---- */
   function cueFor(id){for(var i=0;i<CUES.length;i++){if(CUES[i].id===id)return CUES[i];}return null;}
   function goToSection(id){
     var el=document.getElementById(id);
     if(el){ el.scrollIntoView({behavior:"smooth",block:"start"}); }
+    var idx=sectionIds.indexOf(id);
+    if(idx>=0) curIndex=idx;
     var c=cueFor(id);
-    if(c && c.t>0 && audio.duration){
+    if(c && audio.duration){
       audio.currentTime=c.t;
       lastCue=-1;
       if(audio.paused){ audio.play().catch(function(){}); }
     }
+    syncing=true;  /* a deliberate nav jump re-aligns page + audio, so keep them synced */
   }
 
   /* ---- confirm modal flow ---- */
@@ -1121,7 +1201,7 @@ footer{padding:36px 32px 130px;font-family:var(--mono);font-size:.68rem;letter-s
     a.addEventListener("click",function(e){
       e.preventDefault();
       var id=a.getAttribute("data-sec");
-      if(id==="top"){ goToSection("top"); return; }
+      if(id==="overview"){ goToSection("overview"); return; }
       askConfirm(id);
     });
   });
@@ -1131,7 +1211,7 @@ footer{padding:36px 32px 130px;font-family:var(--mono);font-size:.68rem;letter-s
     if(jump.value){
       var id=jump.value.replace("#","");
       jump.value="";
-      if(id==="top"){ goToSection("top"); }
+      if(id==="overview"){ goToSection("overview"); }
       else{ askConfirm(id); }
     }
   });
